@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>주방 포트리스: 마왕족발 vs 생아구</title>
+  <style>
+    :root{--bg:#070b14;--card:#111827;--text:#e5e7eb;--muted:#94a3b8;}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",Arial,sans-serif;background:linear-gradient(180deg,#050812,#0b1220);color:var(--text);}
+    .wrap{max-width:980px;margin:0 auto;padding:14px;}
+    h1{margin:8px 0 4px;font-size:22px}
+    .sub{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.4}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .card{background:rgba(17,24,39,.72);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.28)}
+    canvas{width:100%;height:auto;display:block;border-radius:16px;border:1px solid rgba(255,255,255,.08);
+      background:
+        radial-gradient(900px 400px at 50% 100%, rgba(34,197,94,.14), transparent 60%),
+        linear-gradient(180deg, rgba(2,6,23,.08), rgba(2,6,23,.78));
+    }
+    .hud{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .pill{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:999px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);font-size:13px;flex-wrap:wrap}
+    button{cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(17,24,39,.7);color:var(--text);padding:8px 10px;border-radius:10px;font-weight:800}
+    button:hover{filter:brightness(1.15)}
+    button.primary{background:rgba(34,197,94,.28);border-color:rgba(34,197,94,.55)}
+    .hint{color:var(--muted);font-size:13px;line-height:1.45}
+    .small{color:var(--muted);font-size:12px;margin-top:10px}
+    .tag{font-size:12px;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:var(--muted);display:inline-block}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>주방 포트리스 🥘💥  마왕족발 vs 생아구</h1>
+  <p class="sub">
+    <b>턴제</b>로 서로 맞춰서 HP를 0으로 만들면 승리.<br/>
+    내 턴일 때만 <b>드래그→놓기</b>로 발사. 턴마다 <b>바람(WIND)</b>이 바뀜.
+  </p>
+
+  <div class="row">
+    <div class="card" style="flex:1 1 640px;">
+      <div class="hud">
+        <div class="pill">
+          <span>🌀 WIND: <b id="wind">0</b></span>
+          <span>🎯 턴: <b id="turn">서인재</b></span>
+          <span>⏱️ 턴시간: <b id="timer">--</b></span>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="startBtn" class="primary">게임 시작</button>
+          <button id="resetBtn">리셋</button>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <canvas id="c" width="900" height="520"></canvas>
+      </div>
+
+      <div class="small" id="msg">💬 준비 완료. “게임 시작”을 눌러!</div>
+    </div>
+
+    <div class="card" style="flex:1 1 300px;">
+      <div class="tag">캐릭터</div>
+      <div class="hint" style="margin-top:10px;">
+        <b>서인재(190)</b> : 무표정/감정없음, 느릿한 골렘 느낌<br/>
+        대사: <b>“인생망해라!”</b><br/>
+        무기: <b>생아구 미사일</b> (가벼움, 탄도 높음)<br/><br/>
+        <b>안족발</b> : 작고 뚱뚱, 대머리 + 안경 느낌, 마왕족발<br/>
+        대사: <b>“그만좀괴롭혀!”</b><br/>
+        무기: <b>마왕족발 앞다리 미사일</b> (무거움, 탄도 낮음)
+      </div>
+
+      <div class="card" style="margin-top:12px;background:rgba(17,24,39,.55);">
+        <div class="hint">
+          <b>조작</b><br/>
+          내 턴일 때 캐릭터 “손 근처” 탄을 클릭(잡기) → 드래그 → 놓기<br/>
+          드래그 길이 = 힘 / 방향 = 발사 방향
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px;background:rgba(17,24,39,.55);">
+        <div class="hint">
+          <b>팁</b><br/>
+          바람이 강하면 탄이 옆으로 밀린다.<br/>
+          약하게 던지면 바로 앞에서 떨어지고, 너무 세면 지나친다.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  const windEl = document.getElementById('wind');
+  const turnEl = document.getElementById('turn');
+  const timerEl = document.getElementById('timer');
+  const msgEl = document.getElementById('msg');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  // ===== Physics =====
+  const G = 1200;
+  const BASE_WIND = 140; // 턴마다 -140~+140 px/s^2 가속(대충 느낌)
+  const REST = 0.55;
+  const FRICTION = 0.985;
+
+  // ===== Field =====
+  const GROUND_Y = 450;
+  const LEFT = 30, RIGHT = canvas.width - 30;
+
+  // ===== Turn =====
+  const TURN_LIMIT = 20; // seconds
+  let running = false;
+  let last = performance.now();
+  let turn = 0;               // 0: 서인재, 1: 안족발
+  let wind = 0;
+  let turnTimeLeft = TURN_LIMIT;
+
+  // "입력 잠금"과 "턴 전환 잠금" 분리 (이게 핵심)
+  let shotInAir = false;         // 탄이 날아가는 동안만 입력 금지
+  let turnTransitioning = false; // 턴 넘어가는 중 중복 방지
+
+  // ===== Characters =====
+  const players = [
+    {
+      id: 'seo',
+      name: '서인재',
+      x: 160,
+      y: GROUND_Y,
+      hp: 100,
+      body: { w: 48, h: 128 },     // 장신 느낌
+      head: { r: 18 },
+      // 아구: 가볍고 높게
+      projectile: { kind:'agu', r: 14, air: 0.992, bounce: 0.72, powerMul: 1.00, arcMul: 1.10, dmg: 26 },
+      taunt: '인생망해라!'
+    },
+    {
+      id: 'jokbal',
+      name: '안족발',
+      x: 740,
+      y: GROUND_Y,
+      hp: 100,
+      body: { w: 84, h: 92 },      // 짧고 뚱
+      head: { r: 22 },
+      // 족발: 무겁고 낮게
+      projectile: { kind:'jokbal', r: 18, air: 0.995, bounce: 0.45, powerMul: 1.12, arcMul: 0.92, dmg: 30 },
+      taunt: '그만좀괴롭혀!'
+    }
+  ];
+
+  // ===== Shots =====
+  let shots = [];
+
+  class Shot {
+    constructor(ownerIndex, x, y, vx, vy) {
+      const p = players[ownerIndex];
+      const pr = p.projectile;
+      this.owner = ownerIndex;
+      this.kind = pr.kind;
+      this.r = pr.r;
+      this.air = pr.air;
+      this.bounce = pr.bounce;
+      this.dmg = pr.dmg;
+      this.x = x; this.y = y;
+      this.vx = vx; this.vy = vy;
+      this.dead = false;
+      this.hit = false;
+      this.createdAt = performance.now();
+      this.lastY = y;
+    }
+
+    update(dt) {
+      this.lastY = this.y;
+
+      // air
+      this.vx *= this.air;
+      this.vy *= this.air;
+
+      // gravity + wind
+      this.vy += G * dt;
+      this.vx += wind * dt;
+
+      // move
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      // walls
+      if (this.x - this.r < LEFT) { this.x = LEFT + this.r; this.vx = -this.vx * REST; }
+      if (this.x + this.r > RIGHT){ this.x = RIGHT - this.r; this.vx = -this.vx * REST; }
+
+      // ground bounce
+      if (this.y + this.r > GROUND_Y) {
+        this.y = GROUND_Y - this.r;
+        this.vy = -this.vy * this.bounce;
+        this.vx *= FRICTION;
+        if (Math.abs(this.vy) < 45) this.vy = 0;
+      }
+
+      // hit check (enemy only)
+      const enemy = players[1 - this.owner];
+      if (!this.hit && circleHitsPlayer(this, enemy)) {
+        this.hit = true;
+        applyDamage(1 - this.owner, this.dmg, this.vx);
+        this.dead = true;
+
+        // 맞으면 즉시 턴 종료
+        endTurn(`${players[this.owner].name} 적중! -${this.dmg} HP`);
+        return;
+      }
+
+      // lifetime
+      if (performance.now() - this.createdAt > 5500) {
+        this.dead = true;
+        // 시간 지나도 안 맞으면 턴 종료
+        endTurn(`${players[this.owner].name} 공격 빗나감…`);
+      }
+    }
+
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+
+      if (this.kind === 'jokbal') {
+        // 족발
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(236,179,95,0.95)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-6, -2);
+        ctx.lineTo(10, 7);
+        ctx.stroke();
+      } else {
+        // 아구
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(147,197,253,0.95)";
+        ctx.fill();
+        ctx.fillStyle = "rgba(2,6,23,0.75)";
+        ctx.beginPath();
+        ctx.arc(4, -3, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(2,6,23,0.35)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-this.r, 0);
+        ctx.lineTo(-this.r - 8, -6);
+        ctx.moveTo(-this.r, 0);
+        ctx.lineTo(-this.r - 8, 6);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // ===== Collision: shot vs player (ellipse approx) =====
+  function circleHitsPlayer(shot, pl) {
+    const cx = pl.x;
+    const cy = pl.y - pl.body.h * 0.55;
+    const rx = pl.body.w * 0.60;
+    const ry = pl.body.h * 0.58;
+
+    const dx = shot.x - cx;
+    const dy = shot.y - cy;
+    const v = (dx*dx)/(rx*rx) + (dy*dy)/(ry*ry);
+
+    // 원 반지름을 타원 판정에 약간 반영(넉넉하게)
+    return v <= 1.0 + (shot.r / 80);
+  }
+
+  function applyDamage(playerIndex, dmg, hitVx) {
+    const pl = players[playerIndex];
+    pl.hp = Math.max(0, pl.hp - dmg);
+
+    // knockback (살짝만)
+    const knock = Math.max(-70, Math.min(70, hitVx * 0.012));
+    pl.x += knock;
+    pl.x = Math.max(90, Math.min(canvas.width - 90, pl.x));
+
+    if (pl.hp <= 0) {
+      running = false;
+      shotInAir = false;
+      turnTransitioning = false;
+      toast(`🏆 ${players[1-playerIndex].name} 승리! (“${players[1-playerIndex].taunt}”)`);
+    }
+  }
+
+  // ===== Turn logic =====
+  function setWind() {
+    wind = (Math.random() * 2 - 1) * BASE_WIND;
+    windEl.textContent = wind.toFixed(0);
+  }
+  function setTurnUI() { turnEl.textContent = players[turn].name; }
+
+  function beginTurn() {
+    if (!running) return;
+    setWind();
+    setTurnUI();
+    turnTimeLeft = TURN_LIMIT;
+    shotInAir = false; // 새 턴 시작할 때 입력 가능
+    toast(`🎯 ${players[turn].name} 턴! “${players[turn].taunt}”`);
+  }
+
+  function endTurn(reason) {
+    if (!running) return;
+    if (turnTransitioning) return;
+
+    turnTransitioning = true;
+    shotInAir = false;
+
+    setTimeout(() => {
+      shots = [];
+      turn = 1 - turn;
+      turnTransitioning = false;
+      beginTurn();
+      toast(reason);
+    }, 550);
+  }
+
+  // ===== Input: drag to shoot =====
+  let dragging = false;
+  let dragStart = null;
+  let dragNow = null;
+
+  function getMousePos(e){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  }
+
+  function spawnPosFor(pl) {
+    // 손 근처
+    const dir = (pl.id === 'seo') ? 1 : -1;
+    return { x: pl.x + dir * (pl.body.w * 0.62), y: pl.y - pl.body.h * 0.72 };
+  }
+
+  function canGrabAmmo(m, ownerIndex) {
+    const pl = players[ownerIndex];
+    const sp = spawnPosFor(pl);
+    const r = pl.projectile.r + 20;
+    return Math.hypot(m.x - sp.x, m.y - sp.y) <= r;
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!running) return;
+    if (turnTransitioning) return;
+    if (shotInAir) return; // 탄 비행 중엔 입력 금지
+
+    const m = getMousePos(e);
+    if (!canGrabAmmo(m, turn)) return;
+
+    dragging = true;
+    dragStart = m;
+    dragNow = m;
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    dragNow = getMousePos(e);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    if (!running) return;
+    if (turnTransitioning) return;
+    if (shotInAir) return;
+
+    const shooter = players[turn];
+    const sp = spawnPosFor(shooter);
+
+    const dx = dragNow.x - dragStart.x;
+    const dy = dragNow.y - dragStart.y;
+
+    // drag 반대 방향 발사
+    let vx = -dx * 6.5;
+    let vy = -dy * 6.5;
+
+    // 힘 제한
+    const speed = Math.min(2200, Math.hypot(vx, vy));
+    const angle = Math.atan2(vy, vx);
+
+    const pr = shooter.projectile;
+    const finalSpeed = speed * pr.powerMul;
+    vx = Math.cos(angle) * finalSpeed;
+    vy = Math.sin(angle) * finalSpeed * pr.arcMul;
+
+    // 기본 방향 보정 (왼쪽은 오른쪽으로, 오른쪽은 왼쪽으로)
+    if (shooter.id === 'seo' && vx < 0) vx *= 0.65;
+    if (shooter.id === 'jokbal' && vx > 0) vx *= 0.65;
+
+    shots.push(new Shot(turn, sp.x, sp.y, vx, vy));
+    shotInAir = true; // 이제 탄이 날아간다(입력 잠금)
+  });
+
+  // ===== Buttons =====
+  startBtn.onclick = () => {
+    reset();
+    running = true;
+    toast("게임 시작! 주방 포트리스 ON");
+    beginTurn();
+  };
+  resetBtn.onclick = () => reset();
+
+  function reset(){
+    running = false;
+    shots = [];
+    players[0].hp = 100;
+    players[1].hp = 100;
+    players[0].x = 160;
+    players[1].x = 740;
+    turn = 0;
+    wind = 0;
+    windEl.textContent = "0";
+    setTurnUI();
+    timerEl.textContent = "--";
+    shotInAir = false;
+    turnTransitioning = false;
+    dragging = false;
+    toast("리셋 완료. 게임 시작을 눌러!");
+  }
+
+  function toast(t){ msgEl.textContent = "💬 " + t; }
+
+  // ===== Drawing: Kitchen background =====
+  function drawKitchen() {
+    // wall base
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // ceiling light
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath();
+    ctx.ellipse(canvas.width/2, 55, 165, 55, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // upper cabinets
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    ctx.fillRect(520, 105, 340, 80);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.strokeRect(520, 105, 340, 80);
+    ctx.beginPath();
+    ctx.moveTo(690,105); ctx.lineTo(690,185); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(780,105); ctx.lineTo(780,185); ctx.stroke();
+
+    // fridge left
+    ctx.fillStyle = "rgba(255,255,255,0.09)";
+    ctx.fillRect(70, 120, 130, 255);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(70, 120, 130, 44);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(188, 186, 6, 78);
+    ctx.fillRect(188, 280, 6, 70);
+
+    // sink/counter
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(520, 290, 350, 105);
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(520, 276, 350, 16);
+
+    // sink bowl
+    ctx.fillStyle = "rgba(2,6,23,0.35)";
+    ctx.fillRect(600, 312, 130, 60);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.strokeRect(600, 312, 130, 60);
+
+    // small utensils on counter (dots)
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    for (let i=0;i<9;i++){
+      ctx.beginPath();
+      ctx.arc(760 + i*10, 310 + (i%3)*8, 2.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // floor tiles
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.fillRect(LEFT, GROUND_Y, canvas.width - LEFT*2, 70);
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.lineWidth = 1;
+    for (let x=LEFT; x<RIGHT; x+=40){
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x, GROUND_Y+70);
+      ctx.stroke();
+    }
+
+    // label
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.font = "14px system-ui";
+    ctx.fillText("주방 결투장", 42, 92);
+
+    // actual ground line
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(LEFT, GROUND_Y, canvas.width - LEFT*2, 8);
+  }
+
+  function drawHPBar(pl, x, y) {
+    const w = 260, h = 14;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(239,68,68,0.8)";
+    ctx.fillRect(x, y, w * (pl.hp/100), h);
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "13px system-ui";
+    ctx.fillText(`${pl.name} HP ${pl.hp}`, x, y - 6);
+  }
+
+  function drawWindGauge() {
+    // mid-top wind line
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.font = "14px system-ui";
+    ctx.fillText("바람", canvas.width/2 - 18, 26);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2 - 90, 40);
+    ctx.lineTo(canvas.width/2 + 90, 40);
+    ctx.stroke();
+
+    // wind marker
+    const wNorm = Math.max(-1, Math.min(1, wind / BASE_WIND));
+    ctx.strokeStyle = "rgba(59,130,246,0.55)";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2, 40);
+    ctx.lineTo(canvas.width/2 + wNorm * 90, 40);
+    ctx.stroke();
+  }
+
+  // 캐릭터를 사진 “복제”가 아니라 “특징만 살린 만화 실루엣”으로 표현
+  function drawPlayer(pl) {
+    const x = pl.x;
+    const y = pl.y;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(0, 6, pl.body.w*0.55, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // body
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(0, -pl.body.h/2, pl.body.w/2, pl.body.h/2, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // head
+    const headY = -pl.body.h - pl.head.r + 10;
+    ctx.beginPath();
+    ctx.arc(0, headY, pl.head.r, 0, Math.PI*2);
+    ctx.fill();
+
+    // face
+    ctx.fillStyle = "rgba(2,6,23,0.55)";
+    if (pl.id === 'seo') {
+      // 무표정 눈 + 입
+      ctx.beginPath(); ctx.arc(-6, headY-2, 2.2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc( 6, headY-2, 2.2, 0, Math.PI*2); ctx.fill();
+      ctx.fillRect(-8, headY+8, 16, 2);
+
+      // "골렘" 돌무늬
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      for (let i=0;i<7;i++){
+        ctx.fillRect(-pl.body.w/2 + 6 + i*10, -pl.body.h + 18 + (i%2)*16, 8, 10);
+      }
+    } else {
+      // 대머리 하이라이트
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.beginPath();
+      ctx.arc(0, headY-6, 7, 0, Math.PI*2);
+      ctx.fill();
+
+      // 안경(느낌)
+      ctx.strokeStyle = "rgba(2,6,23,0.35)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(-8, headY, 9, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc( 8, headY, 9, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(- -1, headY); ctx.lineTo(1, headY);
+      ctx.stroke();
+
+      // 눈/입(찡그림)
+      ctx.fillStyle = "rgba(2,6,23,0.55)";
+      ctx.beginPath(); ctx.arc(-7, headY+1, 2.4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc( 7, headY+1, 2.4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, headY+12, 7, 0.15*Math.PI, 0.85*Math.PI);
+      ctx.strokeStyle = "rgba(2,6,23,0.55)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // arm
+    const dir = (pl.id === 'seo') ? 1 : -1;
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(dir*(pl.body.w/2 - 4), -pl.body.h*0.78, dir*44, 10);
+
+    // name
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.font = "14px system-ui";
+    ctx.fillText(pl.name, -26, 32);
+
+    ctx.restore();
+  }
+
+  function drawAmmoReady() {
+    if (!running) return;
+    if (shotInAir) return; // 탄 비행 중이면 새 탄 표시 X
+
+    const pl = players[turn];
+    const sp = spawnPosFor(pl);
+
+    ctx.save();
+    ctx.translate(sp.x, sp.y);
+
+    if (pl.projectile.kind === 'jokbal') {
+      ctx.beginPath();
+      ctx.arc(0,0,pl.projectile.r,0,Math.PI*2);
+      ctx.fillStyle="rgba(236,179,95,0.95)"; ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,0.9)";
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(-6,-2); ctx.lineTo(10,7); ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0,0,pl.projectile.r,0,Math.PI*2);
+      ctx.fillStyle="rgba(147,197,253,0.95)"; ctx.fill();
+      ctx.fillStyle="rgba(2,6,23,0.75)";
+      ctx.beginPath(); ctx.arc(4,-3,2.2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle="rgba(2,6,23,0.35)";
+      ctx.lineWidth=3;
+      ctx.beginPath();
+      ctx.moveTo(-pl.projectile.r,0); ctx.lineTo(-pl.projectile.r-8,-6);
+      ctx.moveTo(-pl.projectile.r,0); ctx.lineTo(-pl.projectile.r-8, 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawDragLine() {
+    if (!dragging) return;
+
+    const pl = players[turn];
+    const sp = spawnPosFor(pl);
+
+    ctx.strokeStyle = "rgba(59,130,246,0.65)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(sp.x, sp.y);
+    ctx.lineTo(dragNow.x, dragNow.y);
+    ctx.stroke();
+
+    const dx = dragNow.x - dragStart.x;
+    const dy = dragNow.y - dragStart.y;
+    const strength = Math.min(100, Math.hypot(dx,dy));
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "16px system-ui";
+    ctx.fillText("힘: " + Math.round(strength), sp.x - 10, sp.y - 22);
+  }
+
+  // ===== Main loop =====
+  function loop(now) {
+    const dt = Math.min(0.033, (now - last)/1000);
+    last = now;
+
+    // turn timer
+    if (running) {
+      turnTimeLeft -= dt;
+      timerEl.textContent = turnTimeLeft.toFixed(0) + "s";
+
+      // 시간이 끝났는데 아직 발사 안 했으면 턴 넘김
+      if (turnTimeLeft <= 0 && !shotInAir && !turnTransitioning) {
+        endTurn("시간 초과! 턴 넘어감");
+      }
+    }
+
+    // update shots
+    for (const s of shots) s.update(dt);
+    shots = shots.filter(s => !s.dead);
+
+    // 탄이 완전히 없어졌고, 발사했던 상태라면 (미스 처리 endTurn이 이미 했겠지만 안전장치)
+    if (running && shotInAir && shots.length === 0 && !turnTransitioning) {
+      // 여기서는 그냥 입력만 풀어주지 않고 endTurn이 처리하도록 두는 게 안정적.
+      // endTurn이 안 불린 예외를 대비해 아주 짧은 지연 후 처리:
+      setTimeout(() => {
+        if (running && shotInAir && shots.length === 0 && !turnTransitioning) {
+          endTurn(`${players[turn].name} 공격 빗나감…`);
+        }
+      }, 10);
+    }
+
+    // render
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    drawKitchen();
+    drawHPBar(players[0], 40, 18);
+    drawHPBar(players[1], canvas.width - 300, 18);
+    drawWindGauge();
+
+    drawPlayer(players[0]);
+    drawPlayer(players[1]);
+
+    drawAmmoReady();
+    drawDragLine();
+
+    for (const s of shots) s.draw();
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // init
+  reset();
+
+})();
+</script>
+</body>
+</html>
